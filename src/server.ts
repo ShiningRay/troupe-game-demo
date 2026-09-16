@@ -4,9 +4,9 @@
  *   - ws：WebSocket 长连接（客户端指令 → Actor 调用）
  *   - Troupe：URL ?room=xxx 对应一个 RoomActor（虚拟 Actor，按需登台）
  *
- * 广播模式（与官方 examples/chat 一致，长连接用 WS 替代 SSE）：
- *   每个有人的房间一个 100ms 广播循环 → cast(RoomActor, room).snapshot()
- *   → JSON 帧推给该房间所有连接；最后一人离开即停循环，房间空闲自动下场。
+ * 广播模式：RoomActor 在 tick 里 publishShow(`room:<房间名>`, snapshot)，
+ * 服务器以进程内 callback 订阅（troupe.subscribe(topic, fn)）接收并推给同房间
+ * 所有连接；最后一个连接离开即退订，房间空闲自动下场、tick 随之停止。
  *
  * 运行：npm run dev [端口]（默认 8787）；BOOTH=1 额外开框架内省面板 :7500
  */
@@ -18,7 +18,7 @@ import { randomUUID } from "node:crypto";
 import { WebSocketServer, WebSocket } from "ws";
 import { Troupe } from "troupe";
 import { RoomActor } from "./actors/room-actor.js";
-import { TICK_MS, type C2SMessage, type S2CMessage } from "./shared/protocol.js";
+import type { C2SMessage, RoomSnapshot, S2CMessage } from "./shared/protocol.js";
 
 const PORT = Number(process.argv[2] ?? process.env.PORT ?? 8787);
 const PUBLIC_DIR = fileURLToPath(new URL("../public", import.meta.url));
@@ -36,7 +36,9 @@ interface Conn {
 
 /** 边缘层注册表：房间 → 在线连接（广播目标） */
 const rooms = new Map<string, Set<Conn>>();
-const broadcasters = new Map<string, NodeJS.Timeout>();
+/** 房间 → Show 订阅退订函数（有人订阅，无人退订） */
+const roomUnsubs = new Map<string, () => Promise<void>>();
+const pendingSubs = new Set<string>();
 
 function sanitize(value: string | null, fallback: string): string {
   // 允许字母数字、下划线、连字符、中文
@@ -47,38 +49,41 @@ function send(ws: WebSocket, msg: S2CMessage): void {
   if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
 }
 
-/** 房间第一个连接出现时启动 100ms 快照广播循环 */
-function ensureBroadcaster(room: string): void {
-  if (broadcasters.has(room)) return;
-  const agent = troupe.cast(RoomActor, room);
-  const timer = setInterval(() => {
-    void (async () => {
-      const conns = rooms.get(room);
-      if (!conns || conns.size === 0) return;
-      let payload: string;
-      try {
-        const snapshot = await agent.snapshot();
-        payload = JSON.stringify({ type: "state", snapshot } satisfies S2CMessage);
-      } catch {
-        return; // 房间暂不可用（激活失败等）：下一拍重试
-      }
-      for (const conn of conns) {
+/** 房间第一个连接出现时订阅房间话题；快照由 RoomActor 的 tick 发布 */
+async function ensureBroadcaster(room: string): Promise<void> {
+  if (roomUnsubs.has(room) || pendingSubs.has(room)) return;
+  pendingSubs.add(room);
+  try {
+    const unsub = await troupe.subscribe(`room:${room}`, (raw) => {
+      const payload = JSON.stringify({
+        type: "state",
+        snapshot: raw as RoomSnapshot,
+      } satisfies S2CMessage);
+      for (const conn of rooms.get(room) ?? []) {
         if (conn.ws.readyState === WebSocket.OPEN) conn.ws.send(payload);
       }
-    })();
-  }, TICK_MS);
-  broadcasters.set(room, timer);
+    });
+    // 竞态兜底：订阅期间房间已空 → 立即退订
+    const conns = rooms.get(room);
+    if (!conns || conns.size === 0) {
+      await unsub();
+      return;
+    }
+    roomUnsubs.set(room, unsub);
+  } finally {
+    pendingSubs.delete(room);
+  }
 }
 
-/** 房间无人时停掉广播循环——没有调用了，Actor 空闲到点自动下场、tick 随之停 */
+/** 房间无人时退订——没有订阅、没有调用了，Actor 空闲到点自动下场、tick 随之停 */
 function stopBroadcasterIfEmpty(room: string): void {
   const conns = rooms.get(room);
   if (conns && conns.size > 0) return;
   rooms.delete(room);
-  const timer = broadcasters.get(room);
-  if (timer) {
-    clearInterval(timer);
-    broadcasters.delete(room);
+  const unsub = roomUnsubs.get(room);
+  if (unsub) {
+    roomUnsubs.delete(room);
+    unsub().catch(() => {});
   }
 }
 

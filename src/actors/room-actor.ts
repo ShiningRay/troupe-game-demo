@@ -4,6 +4,7 @@
  * 展示的 Troupe 特性：
  *   - 严格串行：同房间的 join/move/tick 天然互斥，无需任何锁
  *   - registerCue 内存 Cue：100ms 游戏循环，仅在场运行，空闲下场自动停
+ *   - publishShow：每拍把全房快照发布到 `room:<房间名>` 话题，边缘层订阅推送
  *   - 攒批落盘：tick 热路径零 IO，flush Cue 每 5s saveProps（丢失窗口 RPO = 5s）
  *   - idempotent join：同 playerId 重放不重复进场
  *   - Props 全部是普通对象/数组（Codec 边界禁 Map/Set/Date）
@@ -56,6 +57,9 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v
 @Performs("Room")
 @Intermission("10m")
 export class RoomActor extends Actor<RoomProps> {
+  /** 最小暴露面：只有这四个方法可被远程调用（tick/flush 是内部 Cue，本就不在白名单） */
+  static rpc = ["join", "setDir", "leave", "snapshot"];
+
   static initialProps = (): RoomProps => ({
     tick: 0,
     seq: 1,
@@ -139,8 +143,8 @@ export class RoomActor extends Actor<RoomProps> {
     };
   }
 
-  /** 游戏循环：推进移动与吃币判定，零 IO */
-  private _advance(): void {
+  /** 游戏循环：推进移动与吃币判定，零 IO；有玩家时把全房快照发布到房间话题 */
+  private async _advance(): Promise<void> {
     this.props.tick++;
     const players = Object.values(this.props.players);
     if (players.length === 0) return;
@@ -161,6 +165,8 @@ export class RoomActor extends Actor<RoomProps> {
       }
     }
     this.props.dirty = true;
+    // 广播：tick 内发布快照，边缘层 callback 订阅者推给同房间所有连接
+    await this.publishShow(`room:${this.stageName}`, await this.snapshot());
   }
 
   /** 攒批落盘：dirty 才写 */

@@ -33,13 +33,14 @@ npm run typecheck  # tsc --noEmit
 
 ```
 浏览器 Canvas 客户端（public/，零构建单文件）
-   │  ws ↑↓ JSON 帧：join / move          ←  每 100ms 状态快照广播
+   │  ws ↑↓ JSON 帧：join / move          ←  Show 订阅推送：tick 内 publishShow 快照
    ▼
-src/server.ts（node:http + ws，边缘层）
-   │  troupe.cast(RoomActor, roomId).join / setDir / leave / snapshot()
+src/server.ts（node:http + ws，边缘层 callback 订阅者）
+   │  troupe.cast(RoomActor, roomId).join / setDir / leave
+   │  troupe.subscribe(`room:<房间>`, fn) —— 收到快照即推给同房间所有连接
    ▼
 RoomActor（每房间一个 Virtual Actor，严格串行 Turn）
-   • tick Cue（100ms）: 推进移动、吃币判定、金币重生
+   • tick Cue（100ms）: 推进移动、吃币判定、金币重生 → publishShow 快照
    • flush Cue（5s）  : dirty 攒批 saveProps → SQLite（.troupe/，重启不丢分）
 ```
 
@@ -48,7 +49,8 @@ RoomActor（每房间一个 Virtual Actor，严格串行 Turn）
 | 游戏需求 | Troupe 机制 |
 |---|---|
 | 同房间操作互斥（移动/吃币/进出场） | Actor 严格串行执行，零锁 |
-| 100ms 游戏循环 | `onStage()` 里 `registerCue("tick", "100ms")`，仅在场运行，房间空闲下场自动停 |
+| 100ms 游戏循环 | `onStage()` 里 `registerCue("tick", "100ms")`，仅在场运行，房间空闲下场自动停；跳拍计入 `metrics.cueSkipped`（Booth 可见） |
+| 状态广播 | tick 内 `publishShow(\`room:<房间>\`, snapshot)` → 服务器 `troupe.subscribe(topic, fn)` 进程内 callback 推送，无轮询 |
 | 高频 tick 不拖垮 IO | 热路径只改内存，flush Cue 攒批 `saveProps`（丢失窗口 RPO = 5s） |
 | 进房防重放 | `this.idempotent("join:" + playerId, name, fn)` |
 | 跨调用数据边界 | Props/参数/返回值全部普通对象与数组（Codec 禁 `Map`/`Set`/`Date`），出参深拷贝 |
@@ -56,9 +58,10 @@ RoomActor（每房间一个 Virtual Actor，严格串行 Turn）
 | 运维可观测 | `BOOTH=1` 开 Booth 内省面板；`troupe.director()` CLI |
 | 优雅停机 | `SIGINT` → `troupe.shutdown()`（flush 全部在场房间后退出） |
 
-广播模式与官方 `examples/chat` 一致：边缘层自持 `Map<room, Set<WebSocket>>`，
-100ms 定时调 `snapshot()` 把 JSON 帧推给同房间所有连接；最后一个连接离开即停循环，
-房间空闲到 `@Intermission("10m")` 自动下场、tick 随之停止。
+广播链路：`RoomActor` 每拍把全房快照发布到 `room:<房间名>` 话题，服务器用
+`troupe.subscribe(topic, fn)` 的**进程内 callback 订阅**收到后推给同房间所有 WebSocket
+连接；最后一个连接关闭即退订，房间空闲到 `@Intermission("10m")` 自动下场、tick 随之停止。
+房间 Actor 还声明了 `static rpc = ["join", "setDir", "leave", "snapshot"]` 显式最小暴露面。
 
 ## 工程结构
 
