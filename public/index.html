@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Coin Rush · Troupe 多人竞技场</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    font-family: system-ui, "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: #0f172a; color: #e2e8f0;
+    min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+  }
+  header { width: min(1060px, 100%); display: flex; align-items: baseline; gap: 12px; padding: 16px 20px 8px; flex-wrap: wrap; }
+  header h1 { font-size: 22px; }
+  header .room { color: #fbbf24; font-size: 14px; }
+  header .hint { color: #64748b; font-size: 12px; margin-left: auto; }
+  main { display: flex; gap: 16px; padding: 8px 20px 8px; width: min(1060px, 100%); align-items: flex-start; }
+  canvas {
+    background: #1e293b; border: 1px solid #334155; border-radius: 12px;
+    width: min(800px, calc(100vw - 280px)); height: auto;
+  }
+  aside { flex: 1; min-width: 200px; background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 14px 16px; }
+  aside h2 { font-size: 15px; color: #94a3b8; margin-bottom: 10px; }
+  #scores { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+  #scores li { display: flex; align-items: center; gap: 8px; font-size: 14px; padding: 5px 8px; border-radius: 8px; }
+  #scores li.me { background: #334155; }
+  #scores .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+  #scores .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #scores .score { margin-left: auto; font-variant-numeric: tabular-nums; color: #fbbf24; font-weight: 700; }
+  #status { color: #f87171; font-size: 13px; padding: 8px 20px 20px; min-height: 20px; }
+  #overlay {
+    position: fixed; inset: 0; background: rgba(2, 6, 23, 0.82);
+    display: flex; align-items: center; justify-content: center; z-index: 10;
+  }
+  #overlay.hidden { display: none; }
+  .card { background: #1e293b; border: 1px solid #334155; border-radius: 16px; padding: 28px 32px; width: 320px; text-align: center; }
+  .card h2 { font-size: 18px; margin-bottom: 4px; }
+  .card .sub { color: #94a3b8; font-size: 13px; margin-bottom: 18px; }
+  .card input {
+    width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid #475569;
+    background: #0f172a; color: #e2e8f0; font-size: 15px; outline: none; text-align: center;
+  }
+  .card input:focus { border-color: #fbbf24; }
+  .card button {
+    margin-top: 12px; width: 100%; padding: 10px; border: 0; border-radius: 10px;
+    background: #fbbf24; color: #78350f; font-size: 15px; font-weight: 700; cursor: pointer;
+  }
+  .card button:hover { background: #fcd34d; }
+  .card .err { color: #f87171; font-size: 13px; margin-top: 10px; min-height: 18px; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>🪙 Coin Rush</h1>
+    <span class="room" id="room-label"></span>
+    <span class="hint">WASD / 方向键移动 · 吃金币得分 · Troupe.js Virtual Actor Demo</span>
+  </header>
+  <main>
+    <canvas id="arena" width="800" height="600"></canvas>
+    <aside>
+      <h2>排行榜</h2>
+      <ol id="scores"></ol>
+    </aside>
+  </main>
+  <div id="status"></div>
+
+  <div id="overlay">
+    <div class="card">
+      <h2>加入竞技场</h2>
+      <p class="sub" id="overlay-room"></p>
+      <input id="name" maxlength="12" placeholder="输入昵称" autocomplete="off" />
+      <button id="join">进入房间</button>
+      <div class="err" id="join-err"></div>
+    </div>
+  </div>
+
+  <script src="client.js"></script>
+</body>
+</html>
