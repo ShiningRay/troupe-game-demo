@@ -4,6 +4,7 @@
   "private": true,
   "description": "Coin Rush — 基于 Troupe.js Virtual Actor 框架的多人在线竞技场小游戏 demo",
   "type": "module",
+  "packageManager": "pnpm@12.3.4",
   "engines": {
     "node": ">=22.13"
   },
