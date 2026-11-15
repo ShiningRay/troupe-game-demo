@@ -12,7 +12,7 @@
 
 ## 快速开始
 
-前置：Node ≥ 22.13；本 demo 通过 `file:../troupejs` 引用本地框架，**框架需先构建**：
+前置：Node ≥ 22.13；本 demo 通过 `file:../troupejs` 引用本地框架，**框架需先构建**。注意：troupejs 目前为私有仓库，外部访客无法直接 `npm install`，此处仅作架构展示：
 
 ```bash
 cd ../troupejs && npm install && npm run build   # 产出 dist/（只需一次）
