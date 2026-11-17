@@ -10,6 +10,9 @@ const room =
   (new URLSearchParams(location.search).get("room") || "")
     .replace(NAME_RE, "")
     .slice(0, 32) || "lobby";
+/** 可用 ?server=host:port 指向任意 Coin Rush 服务器实现；缺省连本页面所在主机 */
+const server =
+  (new URLSearchParams(location.search).get("server") || "").replace(/[^\w.:\[\]-]/g, "");
 
 const canvas = document.getElementById("arena");
 const ctx = canvas.getContext("2d");
@@ -37,7 +40,8 @@ let lastDir = "";
 
 function wsUrl() {
   const proto = location.protocol === "https:" ? "wss://" : "ws://";
-  return `${proto}${location.host}/ws?room=${encodeURIComponent(room)}`;
+  const host = server || location.host;
+  return `${proto}${host}/ws?room=${encodeURIComponent(room)}`;
 }
 
 function connect() {
